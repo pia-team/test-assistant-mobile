@@ -1,0 +1,23 @@
+node_modules/
+
+# Project-specific test assets (generated / injected by CoTester); the DEMO sample is kept
+features/*
+!features/DEMO/
+!features/steps/
+features/steps/*
+!features/steps/DEMO/
+pages/*
+!pages/DEMO/
+config/*
+!config/projects/
+config/projects/*
+!config/projects/DEMO.dev.example.json
+.cotester-validation-*/
+
+# Reports and results
+allure-results/
+allure-reports/
+reports/
+
+*.log
+.env*

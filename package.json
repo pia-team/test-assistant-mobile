@@ -1,0 +1,24 @@
+{
+  "name": "test-assistant-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CoTester mobile runner: cucumber-js + WebdriverIO (Appium 2, UiAutomator2)",
+  "scripts": {
+    "test": "cucumber-js",
+    "test:dry": "cucumber-js --dry-run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "webdriverio": "^9.4.0"
+  },
+  "devDependencies": {
+    "@cucumber/cucumber": "^12.2.0",
+    "@types/node": "^20.14.0",
+    "allure-commandline": "^2.34.1",
+    "allure-cucumberjs": "^3.4.2",
+    "allure-js-commons": "^3.4.1",
+    "cross-env": "^10.1.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.3"
+  }
+}
