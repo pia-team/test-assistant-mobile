@@ -203,3 +203,10 @@ export async function closeSession(): Promise<void> {
     driver = undefined;
   }
 }
+
+/** Clears in-process run context cache (unit tests only). */
+export function resetDeviceModuleStateForTests(): void {
+  cachedContext = undefined;
+  driver = undefined;
+  sessionCreatedOnce = false;
+}

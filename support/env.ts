@@ -90,6 +90,44 @@ function toDisplayPath(absolutePath: string): string {
   return relative && !relative.startsWith('..') ? relative.replace(/\\/g, '/') : absolutePath;
 }
 
+function firstNonBlank(...values: (string | undefined)[]): string | undefined {
+  for (const v of values) {
+    if (v != null && String(v).trim() !== '') {
+      return String(v).trim();
+    }
+  }
+  return undefined;
+}
+
+function runtimeMobileOverrides(): Partial<EnvConfig> {
+  const username = firstNonBlank(process.env.COTESTER_WEB_USERNAME, process.env.UI_USERNAME);
+  const password =
+    process.env.COTESTER_WEB_PASSWORD !== undefined
+      ? process.env.COTESTER_WEB_PASSWORD
+      : process.env.UI_PASSWORD;
+  const apiBaseUrl = firstNonBlank(process.env.COTESTER_API_BASE_URL, process.env.BASE_URL);
+  return {
+    username,
+    password: password ?? undefined,
+    apiBaseUrl,
+  };
+}
+
+function hasRuntimePassword(): boolean {
+  const rt = runtimeMobileOverrides();
+  return !!(rt.password != null && String(rt.password) !== '');
+}
+
+function applyRuntimeCredentialOverlay(config: EnvConfig): EnvConfig {
+  const rt = runtimeMobileOverrides();
+  const merged: EnvConfig = {
+    username: rt.username || config.username,
+    password: rt.password != null && rt.password !== '' ? rt.password : config.password,
+  };
+  const api = rt.apiBaseUrl || config.apiBaseUrl;
+  return api ? { ...merged, apiBaseUrl: api } : merged;
+}
+
 function isStrictProjectConfigEnabled(): boolean {
   const raw = (process.env.ENV_STRICT_PROJECT_CONFIG ?? '').trim().toLowerCase();
   return raw === '1' || raw === 'true' || raw === 'yes';
@@ -122,25 +160,36 @@ function parseAndValidateEnvConfig(raw: string, filePath: string): EnvConfig {
   const password = typeof record.password === 'string' ? record.password : '';
   const apiBaseUrl = typeof record.apiBaseUrl === 'string' ? record.apiBaseUrl.trim() : '';
 
+  const rt = runtimeMobileOverrides();
+  const effectiveUsername = username || rt.username || '';
+  const effectivePassword =
+    password || (rt.password != null && rt.password !== '' ? rt.password : '');
+
   const missing: string[] = [];
-  if (!username) missing.push('username');
-  if (!password) missing.push('password');
+  if (!effectiveUsername) missing.push('username');
+  if (!effectivePassword && !hasRuntimePassword()) missing.push('password');
   if (missing.length > 0) {
     throw new Error(
       `Env config '${toDisplayPath(filePath)}' is missing required field(s): ${missing.join(', ')}`,
     );
   }
 
-  if (apiBaseUrl) {
+  const effectiveApiBaseUrl = apiBaseUrl || rt.apiBaseUrl || '';
+  if (effectiveApiBaseUrl) {
     try {
       // eslint-disable-next-line no-new
-      new URL(apiBaseUrl);
+      new URL(effectiveApiBaseUrl);
     } catch {
-      throw new Error(`Env config '${toDisplayPath(filePath)}' has invalid apiBaseUrl: '${apiBaseUrl}'`);
+      throw new Error(
+        `Env config '${toDisplayPath(filePath)}' has invalid apiBaseUrl: '${effectiveApiBaseUrl}'`,
+      );
     }
   }
 
-  return apiBaseUrl ? { username, password, apiBaseUrl } : { username, password };
+  const base: EnvConfig = effectiveApiBaseUrl
+    ? { username: effectiveUsername, password: effectivePassword, apiBaseUrl: effectiveApiBaseUrl }
+    : { username: effectiveUsername, password: effectivePassword };
+  return applyRuntimeCredentialOverlay(base);
 }
 
 function buildCandidatePaths(projectKey: string | undefined, tier: string): {
@@ -200,6 +249,10 @@ function logEnvResolution(resolved: ResolvedEnvConfig): void {
   console.log(
     `[ENV]   username: ${resolved.config.username} | password: ${maskSecret(resolved.config.password)}`,
   );
+  const runtimeUser = firstNonBlank(process.env.COTESTER_WEB_USERNAME, process.env.UI_USERNAME);
+  if (runtimeUser) {
+    console.log('[ENV]   runtime overlay: credentials from CoTester env');
+  }
 
   if (resolved.isLegacyFallback) {
     console.warn(
@@ -245,7 +298,11 @@ export function resolveEnvConfig(projectKey?: string): ResolvedEnvConfig {
     );
   }
 
-  const config = parseAndValidateEnvConfig(fs.readFileSync(selected.filePath, 'utf-8'), selected.filePath);
+  const fileConfig = parseAndValidateEnvConfig(
+    fs.readFileSync(selected.filePath, 'utf-8'),
+    selected.filePath,
+  );
+  const config = applyRuntimeCredentialOverlay(fileConfig);
   const resolved: ResolvedEnvConfig = {
     config,
     tier,
