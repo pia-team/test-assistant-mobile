@@ -1,4 +1,5 @@
 {
   "username": "bob@example.com",
-  "password": "10203040"
+  "password": "",
+  "_cotesterNote": "Password injected at runtime via CoTester credentials \u2014 not stored in shared config."
 }

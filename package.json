@@ -6,6 +6,7 @@
   "scripts": {
     "test": "cucumber-js",
     "test:dry": "cucumber-js --dry-run",
+    "test:unit": "node --require ts-node/register/transpile-only --test tests/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

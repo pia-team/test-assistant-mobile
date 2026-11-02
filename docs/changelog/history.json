@@ -1,0 +1,24 @@
+{
+  "project": "mobile",
+  "source": "local Git history, non-merge commits",
+  "commits": [
+    {
+      "commit": "90cb76e31f8e7fd78d1d77a573906ae2980f5925",
+      "date": "2026-10-06T18:45:11+03:00",
+      "subject": "first commit",
+      "confidence": "git-subject-only; not a verified release or feature claim"
+    },
+    {
+      "commit": "c09e6e4da9594ab5595b2c578a0326e7a105a203",
+      "date": "2026-10-06T18:47:13+03:00",
+      "subject": "feat: firs commit",
+      "confidence": "git-subject-only; not a verified release or feature claim"
+    },
+    {
+      "commit": "ec932916a5fafbe3e1f45ffd818ae0ea711600e3",
+      "date": "2026-10-08T12:59:03+03:00",
+      "subject": "feat: git",
+      "confidence": "git-subject-only; not a verified release or feature claim"
+    }
+  ]
+}

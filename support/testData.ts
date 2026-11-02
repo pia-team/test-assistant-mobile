@@ -245,6 +245,49 @@ export const testData = {
   },
 
   /**
+   * Single cell from a DATASET binding (DATA-2 / DATA-3). Fail-closed on empty dataset,
+   * missing column, or out-of-range row. Honors {@code COTESTER_DATASET_ROW_INDEX} when set
+   * (backend DATA-3 iteration) unless {@code options.rowIndex} is explicitly provided.
+   */
+  async getCell(
+    bindingKey: string,
+    column: string,
+    options: { sheet?: string; rowIndex?: number } = {},
+  ): Promise<string> {
+    if (!column || !String(column).trim()) {
+      throw new Error(`Data Center dataset "${bindingKey}" column name is required.`);
+    }
+    const col = String(column);
+    const rows = await this.getRows(bindingKey, { sheet: options.sheet });
+    if (!rows.length) {
+      throw new Error(`Data Center dataset "${bindingKey}" has no rows.`);
+    }
+    // DATA-3: env wins over authoring-time rowIndex so every DATASET_CELL field
+    // in the same Cucumber process reads the iteration row.
+    const envRaw = process.env.COTESTER_DATASET_ROW_INDEX;
+    let index = options.rowIndex == null ? 0 : options.rowIndex;
+    if (envRaw != null && String(envRaw).trim() !== '') {
+      const parsed = Number.parseInt(String(envRaw).trim(), 10);
+      if (!Number.isInteger(parsed) || parsed < 0) {
+        throw new Error(
+          `COTESTER_DATASET_ROW_INDEX must be a non-negative integer (got "${envRaw}").`,
+        );
+      }
+      index = parsed;
+    }
+    if (!Number.isInteger(index) || index < 0 || index >= rows.length) {
+      throw new Error(
+        `Data Center dataset "${bindingKey}" has no row at index ${index} (${rows.length} rows).`,
+      );
+    }
+    const row = rows[index];
+    if (!row || !Object.prototype.hasOwnProperty.call(row, col)) {
+      throw new Error(`Data Center dataset "${bindingKey}" has no column "${col}".`);
+    }
+    return String(row[col] ?? '');
+  },
+
+  /**
    * Stores a file produced during the run (e.g. pulled from the device) as a run-scoped
    * Data Center resource and exposes it to later Test Flow steps.
    */
