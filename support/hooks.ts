@@ -13,11 +13,36 @@ import {
 } from './env';
 import { closeSession, deviceInfo, getDriver, loadRunContext, prepareApp, sessionAlive } from './device';
 import { resetTestDataCache } from './testData';
+import {
+  buildExecutionUnitKey,
+  buildScenarioKey,
+  emitStepEvent,
+  emitStepScreenshot,
+  parseRowIndexFromEnv,
+  parseRowLabelFromEnv,
+  type StepEventKind,
+} from './step-event';
 
 const LOGCAT_LINES = 500;
 
 /** Tracks cucumber-js scenario attempts (initial run + retries) per pickle id. */
 const attemptByPickleId = new Map<string, number>();
+const stepIndexByAttempt = new Map<string, number>();
+const scenarioCtxByWorld = new WeakMap<object, {
+  featurePath: string;
+  featureName: string;
+  scenarioName: string;
+  scenarioKey: string;
+  attempt: number;
+  pickleId: string;
+  rowIndex?: number;
+  rowLabel?: string;
+  executionUnitKey: string;
+}>();
+
+function attemptKey(pickleId: string, attempt: number): string {
+  return `${pickleId}#${attempt}`;
+}
 
 type ScreenshotMode = 'ALL_STEPS' | 'FAIL_ONLY' | 'FAIL_AND_LAST_PASS' | 'NONE';
 
@@ -105,14 +130,18 @@ async function readLogcat(driver: Browser | undefined, udid: string): Promise<st
   }
 }
 
-async function captureScreenshot(world: ICustomWorld, featureName: string): Promise<void> {
-  if (!world.driver) return;
+async function captureScreenshot(
+  world: ICustomWorld,
+  featureName: string,
+): Promise<string | undefined> {
+  if (!world.driver) return undefined;
   const base64 = await world.driver.takeScreenshot();
   const buffer = Buffer.from(base64, 'base64');
   const { display, absolute } = artifactPath('screenshotsDir', 'png');
   await writeArtifact(absolute, buffer);
   console.log(`📸 Screenshot [${featureName}]: ${display}`);
   await world.attach(buffer, 'image/png');
+  return path.basename(absolute);
 }
 
 Before(async function (this: CustomWorld, scenario) {
@@ -155,7 +184,35 @@ Before(async function (this: CustomWorld, scenario) {
   const pickleId = pickleKey(scenario.pickle);
   const attempt = (attemptByPickleId.get(pickleId) ?? 0) + 1;
   attemptByPickleId.set(pickleId, attempt);
+  stepIndexByAttempt.set(attemptKey(pickleId, attempt), 0);
   this.currentFeatureName = featureName;
+
+  const scenarioName = scenario.pickle?.name || 'Unknown Scenario';
+  const rowIndex = parseRowIndexFromEnv();
+  const rowLabel = parseRowLabelFromEnv();
+  const scenarioKey = buildScenarioKey({
+    featurePath: featureUri || featureName,
+    scenarioName,
+    pickleId,
+    rowIndex,
+  });
+  const executionUnitKey = buildExecutionUnitKey({
+    featurePath: featureUri || featureName,
+    scenarioKey,
+    attempt,
+    rowIndex,
+  });
+  scenarioCtxByWorld.set(this, {
+    featurePath: featureUri || featureName,
+    featureName,
+    scenarioName,
+    scenarioKey,
+    attempt,
+    pickleId,
+    rowIndex,
+    rowLabel,
+    executionUnitKey,
+  });
 
   if (featureName) {
     if (attempt > 1) {
@@ -171,6 +228,13 @@ Before(async function (this: CustomWorld, scenario) {
   const info = deviceInfo();
   this.device = info;
   console.log(`📱 Device [${featureName || 'unknown'}]: ${info.udid} ${info.name} Android ${info.platformVersion}`);
+  const datasetRowLabel = process.env.COTESTER_DATASET_ROW_LABEL;
+  const datasetRowIndex = process.env.COTESTER_DATASET_ROW_INDEX;
+  if (datasetRowLabel || (datasetRowIndex != null && String(datasetRowIndex).trim() !== '')) {
+    console.log(
+      `📊 DATA-3 row [${featureName || 'unknown'}]: ${datasetRowLabel || 'R?'} (index=${datasetRowIndex ?? ''})`,
+    );
+  }
 
   this.driver = await getDriver();
   await prepareApp(this.driver);
@@ -188,20 +252,72 @@ Before(async function (this: CustomWorld, scenario) {
 BeforeStep(function (this: ICustomWorld, { pickleStep }) {
   const featureName = this.currentFeatureName || 'unknown';
   console.error(`➡ STEP START [${featureName}]: ${pickleStep.text}`);
+  const ctx = scenarioCtxByWorld.get(this);
+  if (ctx) {
+    const aKey = attemptKey(ctx.pickleId, ctx.attempt);
+    const next = (stepIndexByAttempt.get(aKey) ?? 0) + 1;
+    stepIndexByAttempt.set(aKey, next);
+    emitStepEvent({
+      v: 1,
+      event: 'START',
+      runner: 'MOBILE',
+      featurePath: ctx.featurePath,
+      featureName: ctx.featureName || featureName,
+      scenarioKey: ctx.scenarioKey,
+      scenarioName: ctx.scenarioName,
+      attempt: ctx.attempt,
+      stepIndex: next,
+      pickleStepId: pickleStep.id,
+      rowIndex: ctx.rowIndex,
+      rowLabel: ctx.rowLabel,
+      text: pickleStep.text ?? '',
+      executionUnitKey: ctx.executionUnitKey,
+    });
+  }
 });
 
 AfterStep(async function (this: ICustomWorld, { result, pickleStep, pickle }) {
   const featureName = this.currentFeatureName || 'unknown';
   const status = result.status;
 
-  if (status === 'PASSED') {
+  let event: StepEventKind = 'FAIL';
+  let reason: string | undefined;
+  if (status === 'PASSED' || status === Status.PASSED) {
+    event = 'PASS';
     console.error(`✓ STEP PASS [${featureName}]: ${pickleStep.text}`);
+  } else if (status === 'SKIPPED' || status === Status.SKIPPED) {
+    event = 'SKIP';
+    console.error(`⊘ STEP SKIPPED [${featureName}]: ${pickleStep.text}`);
   } else {
+    event = 'FAIL';
     console.error(`✗ STEP FAIL [${featureName}]: ${pickleStep.text}`);
     if (status === 'FAILED' && this.driver && !(await sessionAlive())) {
       console.error(`DEVICE_LOST: Appium session on ${this.device?.udid ?? 'device'} is no longer available`);
       this.driver = undefined;
     }
+  }
+
+  const ctx = scenarioCtxByWorld.get(this);
+  const aKey = ctx ? attemptKey(ctx.pickleId, ctx.attempt) : '';
+  const stepIndex = aKey ? stepIndexByAttempt.get(aKey) ?? 0 : 0;
+  if (ctx && stepIndex > 0) {
+    emitStepEvent({
+      v: 1,
+      event,
+      runner: 'MOBILE',
+      featurePath: ctx.featurePath,
+      featureName: ctx.featureName || featureName,
+      scenarioKey: ctx.scenarioKey,
+      scenarioName: ctx.scenarioName,
+      attempt: ctx.attempt,
+      stepIndex,
+      pickleStepId: pickleStep.id,
+      rowIndex: ctx.rowIndex,
+      rowLabel: ctx.rowLabel,
+      text: pickleStep.text ?? '',
+      reason,
+      executionUnitKey: ctx.executionUnitKey,
+    });
   }
 
   const steps = pickle?.steps ?? [];
@@ -210,7 +326,23 @@ AfterStep(async function (this: ICustomWorld, { result, pickleStep, pickle }) {
     return;
   }
   try {
-    await captureScreenshot(this, featureName);
+    const fileName = await captureScreenshot(this, featureName);
+    if (fileName && ctx && stepIndex > 0) {
+      emitStepScreenshot({
+        v: 1,
+        kind: 'SCREENSHOT',
+        runner: 'MOBILE',
+        featurePath: ctx.featurePath,
+        featureName: ctx.featureName || featureName,
+        scenarioKey: ctx.scenarioKey,
+        attempt: ctx.attempt,
+        stepIndex,
+        pickleStepId: pickleStep.id,
+        rowIndex: ctx.rowIndex,
+        fileName,
+        executionUnitKey: ctx.executionUnitKey,
+      });
+    }
   } catch (e) {
     console.warn(`⚠️ Step screenshot failed: ${e}`);
   }
