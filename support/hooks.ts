@@ -282,16 +282,16 @@ AfterStep(async function (this: ICustomWorld, { result, pickleStep, pickle }) {
 
   let event: StepEventKind = 'FAIL';
   let reason: string | undefined;
-  if (status === 'PASSED' || status === Status.PASSED) {
+  if (status === Status.PASSED) {
     event = 'PASS';
     console.error(`✓ STEP PASS [${featureName}]: ${pickleStep.text}`);
-  } else if (status === 'SKIPPED' || status === Status.SKIPPED) {
+  } else if (status === Status.SKIPPED) {
     event = 'SKIP';
     console.error(`⊘ STEP SKIPPED [${featureName}]: ${pickleStep.text}`);
   } else {
     event = 'FAIL';
     console.error(`✗ STEP FAIL [${featureName}]: ${pickleStep.text}`);
-    if (status === 'FAILED' && this.driver && !(await sessionAlive())) {
+    if (status === Status.FAILED && this.driver && !(await sessionAlive())) {
       console.error(`DEVICE_LOST: Appium session on ${this.device?.udid ?? 'device'} is no longer available`);
       this.driver = undefined;
     }

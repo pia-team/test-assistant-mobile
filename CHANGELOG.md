@@ -27,3 +27,10 @@ Kanıt / doğrulama: npm run test:unit — DATA-3 three-row smoke 2/2 PASS; ger�
 Android runner WEB/API ile aynı structured step identity marker’larını üretir; DATA-3 row ayrımı korunur.
 
 Kanıt / doğrulama: tests/step-event.test.ts PASS inside npm run test:unit; Appium E2E UNVERIFIED.
+
+<!-- CHANGELOG:ENTRY {"bump": "patch", "date": "2026-11-04T12:56:01+03:00", "evidence": "test-assistant-mobile içinde npx tsc --noEmit -p . temiz; npm run test:unit 17/17 geçti.", "id": "2026-11-04-android-hooks-status", "summary": "Android runner adım sonunda durumunu yalnız Cucumber Status enum'u ile karşılaştırır. Böylece ts-node senaryoları yüklerken TS2367 ile durmaz.", "title": "Android hooks durum karşılaştırması", "version": "1.2.1"} -->
+## 1.2.1 — Android hooks durum karşılaştırması
+
+Android runner adım sonunda durumunu yalnız Cucumber Status enum'u ile karşılaştırır. Böylece ts-node senaryoları yüklerken TS2367 ile durmaz.
+
+Kanıt / doğrulama: test-assistant-mobile içinde npx tsc --noEmit -p . temiz; npm run test:unit 17/17 geçti.
